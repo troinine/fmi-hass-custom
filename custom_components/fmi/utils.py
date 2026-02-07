@@ -303,8 +303,14 @@ async def fetch_uv_index_data(
                 # Parse each time/UV pair
                 for time_str, uv_val, uv_clear in zip(times, uv_indices, uv_clear_sky):
                     try:
-                        # Parse ISO 8601 datetime
+                        # Parse ISO 8601 datetime - Open-Meteo returns timezone-aware datetimes
                         dt = datetime.fromisoformat(time_str)
+                        
+                        # Ensure datetime is timezone-aware (should already be from Open-Meteo)
+                        if dt.tzinfo is None:
+                            # If naive, assume UTC and convert to local
+                            dt = dt.replace(tzinfo=tz.tzutc()).astimezone(tz.tzlocal())
+                        
                         uv_data_dict[dt] = UVIndexData(
                             time=dt,
                             uv_index=float(uv_val) if uv_val is not None else 0.0,

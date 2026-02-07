@@ -257,18 +257,33 @@ class FMIDataUpdateCoordinator(DataUpdateCoordinator):
         if not self.uv_index_data:
             return None
         
+        # Ensure target_time is timezone-aware for comparison
+        if target_time.tzinfo is None:
+            # If naive, assume local timezone
+            target_time = target_time.replace(tzinfo=tz.tzlocal())
+        else:
+            # Convert to local timezone for consistent comparison
+            target_time = target_time.astimezone(tz.tzlocal())
+        
         # Find closest matching time (within 1 hour tolerance)
         closest_time = None
+        closest_uv = None
         min_diff = timedelta(hours=2)  # Max acceptable difference
         
-        for data_time in self.uv_index_data.keys():
-            time_diff = abs(data_time - target_time)
+        for data_time, uv_data in self.uv_index_data.items():
+            # data_time should already be timezone-aware from parsing
+            # Convert to local timezone for comparison
+            data_time_local = data_time.astimezone(tz.tzlocal())
+            
+            time_diff = abs(data_time_local - target_time)
             if time_diff < min_diff:
                 min_diff = time_diff
                 closest_time = data_time
+                closest_uv = uv_data.uv_index
         
+        # Return UV index if within 1 hour tolerance
         if closest_time and min_diff < timedelta(hours=1):
-            return self.uv_index_data[closest_time].uv_index
+            return closest_uv
         
         return None
 
