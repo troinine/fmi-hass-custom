@@ -1,8 +1,10 @@
 """Common utilities for the FMI Weather and Sensor integrations."""
 
 import math
+import aiohttp
 from datetime import date, datetime
 from dateutil import tz
+from typing import Optional, Dict, List
 
 try:
     from homeassistant.helpers.sun import get_astral_event_date
@@ -237,3 +239,94 @@ def select_daily_condition(hourly_conditions_with_times):
     # STEP 5: Ultimate fallback - most common overall
     most_common_overall = condition_counts.most_common(1)[0][0]
     return most_common_overall
+
+
+class UVIndexData:
+    """Structure to hold UV index forecast data from Open-Meteo."""
+
+    def __init__(self, time: datetime, uv_index: float, uv_index_clear_sky: Optional[float] = None):
+        """Initialize UV index data point."""
+        self.time = time
+        self.uv_index = uv_index
+        self.uv_index_clear_sky = uv_index_clear_sky
+
+
+async def fetch_uv_index_data(
+    session: aiohttp.ClientSession,
+    latitude: float,
+    longitude: float,
+    forecast_days: int = 7,
+    timeout_seconds: int = 10
+) -> Optional[Dict[datetime, UVIndexData]]:
+    """
+    Fetch UV index forecast data from Open-Meteo API.
+
+    Args:
+        session: aiohttp ClientSession for making requests
+        latitude: Latitude coordinate
+        longitude: Longitude coordinate
+        forecast_days: Number of days to forecast (default 7, max 16)
+        timeout_seconds: Request timeout in seconds
+
+    Returns:
+        Dictionary mapping datetime to UVIndexData, or None on error
+    """
+    try:
+        # Construct API URL
+        url = (
+            f"{const.OPEN_METEO_BASE_URL}"
+            f"?latitude={latitude}&longitude={longitude}"
+            f"&hourly=uv_index,uv_index_clear_sky"
+            f"&daily=uv_index_max,uv_index_clear_sky_max"
+            f"&forecast_days={min(forecast_days, 16)}"
+            f"&timezone=auto"
+        )
+
+        # Make API request
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout_seconds)) as response:
+            if response.status != 200:
+                const.LOGGER.error(
+                    "Open-Meteo API returned status %d for UV index data",
+                    response.status
+                )
+                return None
+
+            data = await response.json()
+
+            # Parse hourly UV index data
+            uv_data_dict = {}
+            if "hourly" in data and "time" in data["hourly"] and "uv_index" in data["hourly"]:
+                times = data["hourly"]["time"]
+                uv_indices = data["hourly"]["uv_index"]
+                uv_clear_sky = data["hourly"].get("uv_index_clear_sky", [None] * len(times))
+
+                # Parse each time/UV pair
+                for time_str, uv_val, uv_clear in zip(times, uv_indices, uv_clear_sky):
+                    try:
+                        # Parse ISO 8601 datetime
+                        dt = datetime.fromisoformat(time_str)
+                        uv_data_dict[dt] = UVIndexData(
+                            time=dt,
+                            uv_index=float(uv_val) if uv_val is not None else 0.0,
+                            uv_index_clear_sky=float(uv_clear) if uv_clear is not None else None
+                        )
+                    except (ValueError, TypeError) as parse_error:
+                        const.LOGGER.warning(
+                            "Failed to parse UV index data point: %s", parse_error
+                        )
+                        continue
+
+            const.LOGGER.debug(
+                "Fetched %d UV index data points from Open-Meteo for coordinates (%f, %f)",
+                len(uv_data_dict), latitude, longitude
+            )
+
+            return uv_data_dict if uv_data_dict else None
+
+    except aiohttp.ClientError as error:
+        const.LOGGER.error("Error fetching UV index data from Open-Meteo: %s", error)
+        return None
+    except Exception as error:
+        const.LOGGER.error("Unexpected error fetching UV index data: %s", error)
+        return None
+

@@ -189,6 +189,8 @@ class FMIDataUpdateCoordinator(DataUpdateCoordinator):
             const.CONF_LIGHTNING, const.LIGHTNING_DEFAULT))
         self.lightning_radius = int(_options.get(
             const.CONF_LIGHTNING_DISTANCE, const.BOUNDING_BOX_HALF_SIDE_KM))
+        self.uv_index_mode = bool(_options.get(
+            const.CONF_UV_INDEX, const.UV_INDEX_DEFAULT))
 
         # Observation data if the station id is set and valid
         self.observation: typing.Optional[fmi_models.Weather] = None
@@ -211,6 +213,9 @@ class FMIDataUpdateCoordinator(DataUpdateCoordinator):
 
         # Mareo
         self.mareo_data: typing.Optional[FMIMareoStruct] = None
+
+        # UV Index data from Open-Meteo (dict mapping datetime to UVIndexData)
+        self.uv_index_data: typing.Optional[typing.Dict[datetime, utils.UVIndexData]] = None
 
         name = name if name else const.DOMAIN
 
@@ -237,6 +242,34 @@ class FMIDataUpdateCoordinator(DataUpdateCoordinator):
         """Return the current place."""
         if self.current is not None and hasattr(self.current, 'place'):
             return self.current.place
+        return None
+
+    def get_uv_index_for_time(self, target_time: datetime) -> typing.Optional[float]:
+        """
+        Get UV index for a specific time from cached data.
+        
+        Args:
+            target_time: The datetime to look up UV index for
+            
+        Returns:
+            UV index value, or None if not available
+        """
+        if not self.uv_index_data:
+            return None
+        
+        # Find closest matching time (within 1 hour tolerance)
+        closest_time = None
+        min_diff = timedelta(hours=2)  # Max acceptable difference
+        
+        for data_time in self.uv_index_data.keys():
+            time_diff = abs(data_time - target_time)
+            if time_diff < min_diff:
+                min_diff = time_diff
+                closest_time = data_time
+        
+        if closest_time and min_diff < timedelta(hours=1):
+            return self.uv_index_data[closest_time].uv_index
+        
         return None
 
     def __update_best_weather_condition(self):
@@ -459,6 +492,38 @@ class FMIDataUpdateCoordinator(DataUpdateCoordinator):
         else:
             self.logger.debug("FMI: Mareo data not updated. No data available")
 
+    async def __update_uv_index_data(self):
+        """Fetch UV index data from Open-Meteo API."""
+        try:
+            # Get HTTP session from Home Assistant
+            session = async_get_clientsession(self._hass)
+
+            # Calculate forecast days based on existing forecast_points configuration
+            forecast_days = max(7, (self.forecast_points * self.time_step) // 24)
+
+            # Fetch UV index data
+            uv_data = await utils.fetch_uv_index_data(
+                session=session,
+                latitude=self.latitude,
+                longitude=self.longitude,
+                forecast_days=min(forecast_days, 16),  # Open-Meteo supports up to 16 days
+                timeout_seconds=const.TIMEOUT_UV_INDEX_PULL_IN_SECS
+            )
+
+            if uv_data:
+                self.uv_index_data = uv_data
+                self.logger.debug(
+                    "FMI: Fetched %d UV index data points from Open-Meteo",
+                    len(uv_data)
+                )
+            else:
+                self.logger.warning("FMI: No UV index data available from Open-Meteo")
+                self.uv_index_data = None
+
+        except Exception as error:
+            self.logger.error("FMI: Error updating UV index data: %s", error)
+            self.uv_index_data = None
+
     async def _fetch_forecast_weather(self):
         """Fetch current weather data based on estimation (forecast)."""
         try:
@@ -505,6 +570,11 @@ class FMIDataUpdateCoordinator(DataUpdateCoordinator):
                 # Update mareograph data on sea level
                 await self._hass.async_add_executor_job(self.__update_mareo_data)
                 self.logger.debug("FMI: Mareograph sea level data updated")
+
+                # Update UV index data from Open-Meteo
+                if self.uv_index_mode:
+                    await self.__update_uv_index_data()
+                    self.logger.debug("FMI: UV index data updated")
 
         except (TimeoutError, UpdateFailed) as error:
             raise UpdateFailed(error) from error

@@ -11,6 +11,7 @@ from homeassistant.components.weather import (
     ATTR_FORECAST_NATIVE_WIND_SPEED,
     ATTR_FORECAST_NATIVE_TEMP_LOW,
     ATTR_FORECAST_CLOUD_COVERAGE,
+    ATTR_FORECAST_UV_INDEX,
     WeatherEntity,
     Forecast,
 )
@@ -175,6 +176,12 @@ class FMIWeatherEntity(CoordinatorEntity, WeatherEntity):
         time = forecast.time.astimezone(tz.tzlocal())
         condition = utils.get_weather_symbol(forecast.symbol.value)
         aggregation['conditions_with_times'].append((time, condition))
+        
+        # Collect UV index for maximum calculation
+        _fmi: FMIDataUpdateCoordinator = self.coordinator
+        uv_index = _fmi.get_uv_index_for_time(time)
+        if uv_index is not None:
+            aggregation['uv_indices'].append(uv_index)
     
     def __finalize_daily_aggregation(self, forecast_item, aggregation):
         """Apply aggregated values to a daily forecast item."""
@@ -204,6 +211,10 @@ class FMIWeatherEntity(CoordinatorEntity, WeatherEntity):
                 sum(aggregation['clouds']) / len(aggregation['clouds'])
             )
         
+        # UV Index: maximum across the day (following WMO guidelines for daily UV)
+        if aggregation.get('uv_indices'):
+            forecast_item[ATTR_FORECAST_UV_INDEX] = max(aggregation['uv_indices'])
+        
         # Condition: select most significant condition using hybrid approach
         if aggregation['conditions_with_times']:
             daily_condition = utils.select_daily_condition(
@@ -230,6 +241,7 @@ class FMIWeatherEntity(CoordinatorEntity, WeatherEntity):
             'pressures': [],
             'clouds': [],
             'conditions_with_times': [],
+            'uv_indices': [],
         }
 
         for forecast in _forecasts:
@@ -248,6 +260,7 @@ class FMIWeatherEntity(CoordinatorEntity, WeatherEntity):
                     'pressures': [],
                     'clouds': [],
                     'conditions_with_times': [],
+                    'uv_indices': [],
                 }
                 
                 # add a new day
@@ -264,6 +277,12 @@ class FMIWeatherEntity(CoordinatorEntity, WeatherEntity):
                     ATTR_WEATHER_HUMIDITY: _get_val(forecast, "humidity"),
                     ATTR_FORECAST_CLOUD_COVERAGE: _get_val(forecast, "cloud_cover"),
                 }
+                
+                # Add UV index if available
+                uv_index = _fmi.get_uv_index_for_time(_time)
+                if uv_index is not None:
+                    _item[ATTR_FORECAST_UV_INDEX] = uv_index
+                
                 _data.append(_item)
                 
                 # Start collecting values for this day if in daily mode

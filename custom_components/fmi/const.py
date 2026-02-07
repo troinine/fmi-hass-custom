@@ -12,6 +12,7 @@ MANUFACTURER = "Finnish Meteorological Institute"
 TIMEOUT_FMI_INTEG_IN_SEC = 40
 TIMEOUT_LIGHTNING_PULL_IN_SECS = 5
 TIMEOUT_MAREO_PULL_IN_SECS = 5
+TIMEOUT_UV_INDEX_PULL_IN_SECS = 10
 LIGHTNING_LOOP_TIMEOUT_IN_SECS = 20
 
 COORDINATOR = "coordinator"
@@ -33,6 +34,7 @@ CONF_DAILY_MODE = "daily_mode"
 CONF_LIGHTNING = "lightning_sensor"
 CONF_LIGHTNING_DISTANCE = "lightning_radius"
 CONF_OBSERVATION_STATION = "observation_station_id"
+CONF_UV_INDEX = "uv_index_sensor"
 
 HUMIDITY_RANGE = list(range(1, 101))
 HUMIDITY_MIN_DEFAULT = 30
@@ -49,6 +51,7 @@ PRECIPITATION_MIN_DEFAULT = .0
 PRECIPITATION_MAX_DEFAULT = .2
 DAILY_MODE_DEFAULT = False
 LIGHTNING_DEFAULT = False
+UV_INDEX_DEFAULT = False
 
 FORECAST_OFFSET = [1, 2, 3, 4, 6, 8, 12, 24]  # Based on API test runs
 DEFAULT_NAME = "FMI"
@@ -86,6 +89,9 @@ LIGHTNING_GET_URL = f"{URL_FMI_BASE}{LIGHTNING_QUERY_ID}&timestep=3600&"
 
 MAREO_QUERY_ID = "fmi::forecast::sealevel::point::simple"
 MAREO_GET_URL = f"{URL_FMI_BASE}{MAREO_QUERY_ID}&timestep=30&"
+
+# Open-Meteo API for UV Index
+OPEN_METEO_BASE_URL = "https://api.open-meteo.com/v1/forecast"
 
 # MAREO_OBS_QUERY_ID = "fmi::observations::mareograph::simple"
 # MAREO_OBS_GET_URL = f"{URL_FMI_BASE}{MAREO_OBS_QUERY_ID}&fmisid=132310&timestep=30"
