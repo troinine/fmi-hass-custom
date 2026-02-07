@@ -170,6 +170,11 @@ class FMIWeatherEntity(CoordinatorEntity, WeatherEntity):
         clouds = get_val_func(forecast, "cloud_cover")
         if clouds is not None:
             aggregation['clouds'].append(clouds)
+        
+        # Collect condition with timestamp for daily condition selection
+        time = forecast.time.astimezone(tz.tzlocal())
+        condition = utils.get_weather_symbol(forecast.symbol.value)
+        aggregation['conditions_with_times'].append((time, condition))
     
     def __finalize_daily_aggregation(self, forecast_item, aggregation):
         """Apply aggregated values to a daily forecast item."""
@@ -198,6 +203,13 @@ class FMIWeatherEntity(CoordinatorEntity, WeatherEntity):
             forecast_item[ATTR_FORECAST_CLOUD_COVERAGE] = (
                 sum(aggregation['clouds']) / len(aggregation['clouds'])
             )
+        
+        # Condition: select most significant condition using hybrid approach
+        if aggregation['conditions_with_times']:
+            daily_condition = utils.select_daily_condition(
+                aggregation['conditions_with_times']
+            )
+            forecast_item[ATTR_FORECAST_CONDITION] = daily_condition
 
     def _forecast(self, daily_mode: bool) -> list[Forecast] | None:
         """Return the forecasts."""
@@ -217,6 +229,7 @@ class FMIWeatherEntity(CoordinatorEntity, WeatherEntity):
             'humidities': [],
             'pressures': [],
             'clouds': [],
+            'conditions_with_times': [],
         }
 
         for forecast in _forecasts:
@@ -234,6 +247,7 @@ class FMIWeatherEntity(CoordinatorEntity, WeatherEntity):
                     'humidities': [],
                     'pressures': [],
                     'clouds': [],
+                    'conditions_with_times': [],
                 }
                 
                 # add a new day

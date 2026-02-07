@@ -126,3 +126,41 @@ FMI_WEATHER_SYMBOL_MAP = {
     91: "fog",  # "Fog",
     92: "fog",  # "Fog"
 }
+
+# Weather condition severity rankings for daily forecast selection
+# Higher number = more severe/important to show
+WEATHER_CONDITION_SEVERITY = {
+    # Tier 1: Severe weather (always shown if present ≥1 hour)
+    'lightning-rainy': 100,
+    'lightning': 95,
+    
+    # Tier 2: Heavy precipitation (shown if ≥3 hours)
+    'pouring': 80,
+    'snowy-rainy': 75,
+    
+    # Tier 3: Moderate precipitation (shown if ≥3 hours)
+    'snowy': 60,
+    'rainy': 55,
+    
+    # Tier 4: Visibility/obstacles (shown if ≥4 hours)
+    'fog': 40,
+    
+    # Tier 5: Cloudy (fallback to most common)
+    'cloudy': 30,
+    'partlycloudy': 20,
+    
+    # Tier 6: Clear (fallback to most common)
+    'sunny': 10,
+    'clear-night': 10,
+}
+
+# Thresholds for condition significance (in hours)
+CONDITION_THRESHOLDS = {
+    'severe': 1,        # Any severe weather (lightning) for 1+ hour shown
+    'precipitation': 3, # Rain/snow for 3+ hours shown
+    'visibility': 4,    # Fog for 4+ hours shown
+}
+
+# Time window for "daytime" when calculating most common fallback
+DAYTIME_START_HOUR = 7   # 07:00
+DAYTIME_END_HOUR = 20     # 20:00
