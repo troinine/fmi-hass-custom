@@ -8,12 +8,23 @@ import xml.etree.ElementTree as ET
 import requests
 from geopy.distance import geodesic
 from geopy.geocoders import Nominatim
+from unittest.mock import MagicMock
+
+# Mock Home Assistant modules before importing custom_components
+sys.modules["homeassistant"] = MagicMock()
+sys.modules["homeassistant.const"] = MagicMock()
+sys.modules["homeassistant.core"] = MagicMock()
+sys.modules["homeassistant.helpers"] = MagicMock()
+sys.modules["homeassistant.helpers.typing"] = MagicMock()
+sys.modules["homeassistant.exceptions"] = MagicMock()
+sys.modules["homeassistant.helpers.aiohttp_client"] = MagicMock()
+sys.modules["homeassistant.helpers.update_coordinator"] = MagicMock()
 
 # Add parent to sys path for project file imports
 sys.path.append(os.path.abspath(os.path.join(sys.path[0], "..")))
 
-import const  # noqa: E402
-import utils  # noqa: E402
+from custom_components.fmi import const  # noqa: E402
+from custom_components.fmi import utils  # noqa: E402
 
 
 _LOGGER = logging.getLogger(__package__)

@@ -7,3 +7,4 @@ geopy>=2.1.0
 xmltodict>=0.14.2
 flake8
 pylint
+pytest
