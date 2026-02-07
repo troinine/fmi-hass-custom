@@ -148,6 +148,56 @@ class FMIWeatherEntity(CoordinatorEntity, WeatherEntity):
         if value is None or not value.unit:
             return None
         return value.unit
+    
+    def __collect_daily_values(self, forecast, aggregation, get_val_func):
+        """Collect values from a forecast hour for daily aggregation."""
+        precip = get_val_func(forecast, "precipitation_amount")
+        if precip is not None:
+            aggregation['precipitation_sum'] += precip
+        
+        wind = get_val_func(forecast, "wind_speed")
+        if wind is not None:
+            aggregation['wind_speeds'].append(wind)
+        
+        humidity = get_val_func(forecast, "humidity")
+        if humidity is not None:
+            aggregation['humidities'].append(humidity)
+        
+        pressure = get_val_func(forecast, "pressure")
+        if pressure is not None:
+            aggregation['pressures'].append(pressure)
+        
+        clouds = get_val_func(forecast, "cloud_cover")
+        if clouds is not None:
+            aggregation['clouds'].append(clouds)
+    
+    def __finalize_daily_aggregation(self, forecast_item, aggregation):
+        """Apply aggregated values to a daily forecast item."""
+        # Precipitation: sum of all hours
+        if aggregation['precipitation_sum'] > 0:
+            forecast_item[ATTR_FORECAST_NATIVE_PRECIPITATION] = aggregation['precipitation_sum']
+        
+        # Wind speed: maximum across the day
+        if aggregation['wind_speeds']:
+            forecast_item[ATTR_FORECAST_NATIVE_WIND_SPEED] = max(aggregation['wind_speeds'])
+        
+        # Humidity: average across the day
+        if aggregation['humidities']:
+            forecast_item[ATTR_WEATHER_HUMIDITY] = (
+                sum(aggregation['humidities']) / len(aggregation['humidities'])
+            )
+        
+        # Pressure: average across the day
+        if aggregation['pressures']:
+            forecast_item[ATTR_WEATHER_PRESSURE] = (
+                sum(aggregation['pressures']) / len(aggregation['pressures'])
+            )
+        
+        # Cloud coverage: average across the day
+        if aggregation['clouds']:
+            forecast_item[ATTR_FORECAST_CLOUD_COVERAGE] = (
+                sum(aggregation['clouds']) / len(aggregation['clouds'])
+            )
 
     def _forecast(self, daily_mode: bool) -> list[Forecast] | None:
         """Return the forecasts."""
@@ -159,11 +209,33 @@ class FMIWeatherEntity(CoordinatorEntity, WeatherEntity):
 
         _item = {}
         _current_day = 0
+        
+        # For daily mode, track values across the day for aggregation
+        _daily_aggregation = {
+            'precipitation_sum': 0.0,
+            'wind_speeds': [],
+            'humidities': [],
+            'pressures': [],
+            'clouds': [],
+        }
 
         for forecast in _forecasts:
             _time = forecast.time.astimezone(tz.tzlocal())
             _temperature = _get_val(forecast, "temperature")
             if not daily_mode or _current_day != _time.day:
+                # Finalize aggregation for previous day if in daily mode
+                if daily_mode and _item:
+                    self.__finalize_daily_aggregation(_item, _daily_aggregation)
+                
+                # Reset aggregation for new day
+                _daily_aggregation = {
+                    'precipitation_sum': 0.0,
+                    'wind_speeds': [],
+                    'humidities': [],
+                    'pressures': [],
+                    'clouds': [],
+                }
+                
                 # add a new day
                 _current_day = _time.day
                 _item = {
@@ -179,13 +251,25 @@ class FMIWeatherEntity(CoordinatorEntity, WeatherEntity):
                     ATTR_FORECAST_CLOUD_COVERAGE: _get_val(forecast, "cloud_cover"),
                 }
                 _data.append(_item)
+                
+                # Start collecting values for this day if in daily mode
+                if daily_mode:
+                    self.__collect_daily_values(forecast, _daily_aggregation, _get_val)
 
             else:
-                # update daily high and low temperature values
+                # Same day - update daily high and low temperature values
                 if _item[ATTR_FORECAST_NATIVE_TEMP] < _temperature:
                     _item[ATTR_FORECAST_NATIVE_TEMP] = _temperature
                 if _item[ATTR_FORECAST_NATIVE_TEMP_LOW] > _temperature:
                     _item[ATTR_FORECAST_NATIVE_TEMP_LOW] = _temperature
+                
+                # Collect values for aggregation
+                self.__collect_daily_values(forecast, _daily_aggregation, _get_val)
+        
+        # Finalize the last day if in daily mode
+        if daily_mode and _item:
+            self.__finalize_daily_aggregation(_item, _daily_aggregation)
+        
         return _data
 
     @property
